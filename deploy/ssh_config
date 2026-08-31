@@ -1,0 +1,17 @@
+Host curator-flow-* ecs1 ecs2 ecs3
+    User root
+    Port 22
+    BatchMode yes
+    ConnectTimeout 8
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+    StrictHostKeyChecking accept-new
+
+Host curator-flow-ecs1 ecs1
+    HostName 8.145.50.233
+
+Host curator-flow-ecs2 ecs2
+    HostName 8.130.134.116
+
+Host curator-flow-ecs3 ecs3
+    HostName 8.130.191.173

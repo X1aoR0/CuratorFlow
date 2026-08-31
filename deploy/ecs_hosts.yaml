@@ -1,0 +1,23 @@
+cluster_name: curator-flow-ecs
+
+ssh:
+  user: root
+  port: 22
+  connect_timeout_seconds: 8
+  options:
+    BatchMode: "yes"
+    ServerAliveInterval: "30"
+    ServerAliveCountMax: "3"
+    StrictHostKeyChecking: "accept-new"
+
+nodes:
+  - name: ecs1
+    role: head
+    public_ip: 8.145.50.233
+  - name: ecs2
+    role: worker
+    public_ip: 8.130.134.116
+  - name: ecs3
+    role: worker
+    public_ip: 8.130.191.173
+
