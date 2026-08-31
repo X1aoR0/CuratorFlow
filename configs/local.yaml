@@ -1,0 +1,26 @@
+project:
+  name: curator-flow
+  pipeline_version: v1
+
+storage:
+  data_root: ./data
+  work_root: ./work
+  checkpoint_root: ./checkpoints
+  max_disk_usage_percent: 80
+
+execution:
+  backend: xenna
+  mode: streaming
+  autoscale_interval_s: 180
+  cpu_allocation_percentage: 0.75
+
+data:
+  target_shard_size_mb: 512
+  shards_per_file_group_task: 4
+  image_batch_size: 32
+
+gpu:
+  enabled: false
+  clip_batch_size: 16
+  embedding_dtype: float16
+

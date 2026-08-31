@@ -1,0 +1,22 @@
+.DS_Store
+.idea/
+.vscode/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local data and runtime state
+data/
+work/
+checkpoints/
+logs/
+ray-spill/
+*.tmp
+
+# Benchmark outputs may contain machine-specific or large files.
+benchmarks/results/*
+!benchmarks/results/.gitkeep
+
