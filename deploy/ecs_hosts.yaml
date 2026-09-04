@@ -20,4 +20,8 @@ nodes:
   - name: ecs3
     role: worker
     public_ip: 8.130.191.173
+  - name: gpu1
+    role: gpu_worker
+    private_ip: 192.168.0.211
+    proxy_jump: ecs1
 

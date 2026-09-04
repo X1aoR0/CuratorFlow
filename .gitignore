@@ -17,7 +17,3 @@ logs/
 ray-spill/
 *.tmp
 
-# Benchmark outputs may contain machine-specific or large files.
-benchmarks/results/*
-!benchmarks/results/.gitkeep
-

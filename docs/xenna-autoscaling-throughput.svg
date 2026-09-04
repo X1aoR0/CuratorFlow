@@ -1,0 +1,184 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1180" viewBox="0 0 1600 1180" role="img" aria-labelledby="title description">
+  <title id="title">Xenna Autoscaling：从 Curator Task 到归一化吞吐</title>
+  <desc id="description">展示 Curator ImageBatch 与 Xenna item 的计数边界、Measurements 指标来源、四阶段吞吐归一化计算，以及瓶颈识别与资源调整。</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#101828" flood-opacity="0.08"/>
+    </filter>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101828"/>
+      <stop offset="0.62" stop-color="#17315B"/>
+      <stop offset="1" stop-color="#17467E"/>
+    </linearGradient>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#2563EB"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#F59E0B"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="1180" rx="28" fill="#F7F8FA"/>
+
+  <g font-family="Inter, Noto Sans SC, PingFang SC, Microsoft YaHei, Arial, sans-serif">
+    <!-- Hero -->
+    <rect x="40" y="32" width="1520" height="146" rx="20" fill="url(#hero)" filter="url(#shadow)"/>
+    <circle cx="1450" cy="-5" r="170" fill="none" stroke="#60A5FA" stroke-opacity="0.18" stroke-width="44"/>
+    <text x="72" y="68" fill="#84ADFF" font-size="11" font-weight="800" letter-spacing="2.1">CURATOR × XENNA · AUTOSCALING</text>
+    <text x="72" y="112" fill="#FFFFFF" font-size="32" font-weight="760">从 ImageBatch 到归一化吞吐</text>
+    <text x="72" y="143" fill="#C9D7EB" font-size="14">统一口径：Xenna 统计外层 Curator Task；throughput 表示每秒可推动多少个源头 Task</text>
+    <rect x="1210" y="73" width="294" height="58" rx="11" fill="#FFFFFF" fill-opacity="0.10" stroke="#FFFFFF" stroke-opacity="0.18"/>
+    <text x="1230" y="96" fill="#C9D7EB" font-size="11" font-weight="700">核心公式</text>
+    <text x="1230" y="119" fill="#FFFFFF" font-size="14" font-family="SFMono-Regular, Consolas, monospace">W × speed × batch_size ÷ k</text>
+
+    <!-- Counting boundary -->
+    <rect x="40" y="202" width="1520" height="190" rx="18" fill="#FFFFFF" stroke="#E4E7EC" filter="url(#shadow)"/>
+    <text x="64" y="236" fill="#2563EB" font-size="10" font-weight="800" letter-spacing="1.7">01 · COUNTING BOUNDARY · 先分清统计单位</text>
+
+    <rect x="68" y="258" width="310" height="103" rx="12" fill="#F8FAFC" stroke="#D8E0EA"/>
+    <text x="88" y="284" fill="#101828" font-size="15" font-weight="750">Curator：ImageBatch</text>
+    <text x="88" y="309" fill="#475467" font-size="12">1 个 Curator Task</text>
+    <g fill="#DBEAFE" stroke="#60A5FA">
+      <rect x="88" y="324" width="22" height="18" rx="3"/><rect x="116" y="324" width="22" height="18" rx="3"/>
+      <rect x="144" y="324" width="22" height="18" rx="3"/><rect x="172" y="324" width="22" height="18" rx="3"/>
+      <rect x="200" y="324" width="22" height="18" rx="3"/><rect x="228" y="324" width="22" height="18" rx="3"/>
+    </g>
+    <text x="267" y="339" fill="#667085" font-size="11">… 32 Images</text>
+
+    <line x1="393" y1="310" x2="465" y2="310" stroke="#2563EB" stroke-width="3" marker-end="url(#arrow-blue)"/>
+    <text x="428" y="293" text-anchor="middle" fill="#2563EB" font-size="10" font-weight="750">ray.put</text>
+
+    <rect x="478" y="258" width="430" height="103" rx="12" fill="#EFF8FF" stroke="#B2DDFF"/>
+    <text x="498" y="284" fill="#175CD3" font-size="15" font-weight="750">Xenna：一次 Stage 调用</text>
+    <text x="498" y="309" fill="#475467" font-size="12">stage_batch_size = 2（两个外层 Task）</text>
+    <rect x="500" y="322" width="174" height="25" rx="6" fill="#FFFFFF" stroke="#84ADFF"/>
+    <rect x="689" y="322" width="174" height="25" rx="6" fill="#FFFFFF" stroke="#84ADFF"/>
+    <text x="587" y="339" text-anchor="middle" fill="#344054" font-size="10">ref₁ → ImageBatch(32)</text>
+    <text x="776" y="339" text-anchor="middle" fill="#344054" font-size="10">ref₂ → ImageBatch(32)</text>
+
+    <line x1="925" y1="310" x2="990" y2="310" stroke="#2563EB" stroke-width="3" marker-end="url(#arrow-blue)"/>
+    <text x="957" y="293" text-anchor="middle" fill="#2563EB" font-size="10" font-weight="750">ray.get</text>
+
+    <rect x="1002" y="258" width="528" height="103" rx="12" fill="#F0FDF4" stroke="#ABEFC6"/>
+    <text x="1022" y="284" fill="#067647" font-size="15" font-weight="750">Curator Stage 实际收到</text>
+    <text x="1022" y="310" fill="#344054" font-size="12" font-family="SFMono-Regular, Consolas, monospace">process_batch([ImageBatch(32), ImageBatch(32)])</text>
+    <text x="1022" y="338" fill="#067647" font-size="11" font-weight="700">Xenna 计数 = 2 Task；业务数据 = 64 Images</text>
+
+    <!-- Measurement -->
+    <rect x="40" y="416" width="1520" height="168" rx="18" fill="#FFFFFF" stroke="#E4E7EC" filter="url(#shadow)"/>
+    <text x="64" y="450" fill="#2563EB" font-size="10" font-weight="800" letter-spacing="1.7">02 · MEASUREMENTS · speed 与扇出的来源</text>
+
+    <rect x="68" y="472" width="390" height="84" rx="11" fill="#F8FAFC" stroke="#D8E0EA"/>
+    <text x="88" y="497" fill="#101828" font-size="13" font-weight="750">StageWorker 只测 process 阶段</text>
+    <text x="88" y="522" fill="#475467" font-size="12">最近耗时：0.4s · 0.5s · 0.6s</text>
+    <text x="88" y="543" fill="#667085" font-size="11">平均 duration = 0.5s / 调用</text>
+
+    <line x1="470" y1="514" x2="538" y2="514" stroke="#2563EB" stroke-width="3" marker-end="url(#arrow-blue)"/>
+
+    <rect x="550" y="472" width="435" height="84" rx="11" fill="#EFF8FF" stroke="#B2DDFF"/>
+    <text x="570" y="497" fill="#175CD3" font-size="13" font-weight="750">speed_per_worker = 1 ÷ 平均耗时</text>
+    <text x="570" y="527" fill="#101828" font-size="19" font-weight="760">1 ÷ 0.5 = 2 次调用 / 秒 / Worker</text>
+    <text x="570" y="546" fill="#667085" font-size="10">注意：不是 2 个 ImageBatch/s，而是 2 次 process_batch/s</text>
+
+    <rect x="1002" y="472" width="528" height="84" rx="11" fill="#FFF7ED" stroke="#FED7AA"/>
+    <text x="1022" y="497" fill="#B54708" font-size="13" font-weight="750">外层 Task 扇出 = num_returns ÷ stage_batch_size</text>
+    <text x="1022" y="527" fill="#101828" font-size="19" font-weight="760">例如：输入 4 Task，返回 2 Task → 2 ÷ 4 = 0.5</text>
+    <text x="1022" y="546" fill="#667085" font-size="10">num_returns 同样统计外层 Curator Task，不展开 ImageBatch.data</text>
+
+    <!-- Normalization and stages -->
+    <rect x="40" y="608" width="1520" height="354" rx="18" fill="#FFFFFF" stroke="#E4E7EC" filter="url(#shadow)"/>
+    <text x="64" y="642" fill="#2563EB" font-size="10" font-weight="800" letter-spacing="1.7">03 · NORMALIZED THROUGHPUT · 全部换算为“源头 Curator Task / 秒”</text>
+    <text x="64" y="670" fill="#475467" font-size="12">k = 一个源头 Task 最终会给当前 Stage 产生多少个输入 Task　｜　throughput = W × speed × batch_size ÷ k</text>
+
+    <!-- Stage cards -->
+    <g>
+      <rect x="68" y="700" width="340" height="207" rx="13" fill="#FEF2F2" stroke="#FDA29B" stroke-width="2"/>
+      <rect x="68" y="700" width="340" height="38" rx="13" fill="#FEE4E2"/>
+      <rect x="68" y="725" width="340" height="13" fill="#FEE4E2"/>
+      <text x="88" y="725" fill="#B42318" font-size="15" font-weight="780">Reader</text>
+      <text x="386" y="724" text-anchor="end" fill="#B42318" font-size="10" font-weight="750">BOTTLENECK</text>
+      <text x="88" y="761" fill="#475467" font-size="11">W = 1　avg = 2s　speed = 0.5/s</text>
+      <text x="88" y="785" fill="#475467" font-size="11">batch = 1　output = 4　扇出 = 4</text>
+      <text x="88" y="809" fill="#475467" font-size="11">k = 1（源头 Stage）</text>
+      <line x1="88" y1="826" x2="388" y2="826" stroke="#FECACA"/>
+      <text x="88" y="850" fill="#667085" font-size="11">1 × 0.5 × 1 ÷ 1</text>
+      <text x="88" y="881" fill="#B42318" font-size="24" font-weight="780">0.5 <tspan font-size="12">源头 Task/s</tspan></text>
+    </g>
+
+    <line x1="419" y1="803" x2="449" y2="803" stroke="#2563EB" stroke-width="3" marker-end="url(#arrow-blue)"/>
+    <text x="435" y="788" text-anchor="middle" fill="#2563EB" font-size="9" font-weight="700">×4</text>
+
+    <g>
+      <rect x="460" y="700" width="340" height="207" rx="13" fill="#F8FAFC" stroke="#D8E0EA"/>
+      <rect x="460" y="700" width="340" height="38" rx="13" fill="#EFF8FF"/>
+      <rect x="460" y="725" width="340" height="13" fill="#EFF8FF"/>
+      <text x="480" y="725" fill="#175CD3" font-size="15" font-weight="780">Embedding</text>
+      <text x="480" y="761" fill="#475467" font-size="11">W = 2　avg = 0.5s　speed = 2/s</text>
+      <text x="480" y="785" fill="#475467" font-size="11">batch = 2　output = 2　扇出 = 1</text>
+      <text x="480" y="809" fill="#475467" font-size="11">k = 1 × Reader扇出4 = 4</text>
+      <line x1="480" y1="826" x2="780" y2="826" stroke="#D7E8FF"/>
+      <text x="480" y="850" fill="#667085" font-size="11">2 × 2 × 2 ÷ 4</text>
+      <text x="480" y="881" fill="#175CD3" font-size="24" font-weight="780">2.0 <tspan font-size="12">源头 Task/s</tspan></text>
+    </g>
+
+    <line x1="811" y1="803" x2="841" y2="803" stroke="#2563EB" stroke-width="3" marker-end="url(#arrow-blue)"/>
+    <text x="827" y="788" text-anchor="middle" fill="#2563EB" font-size="9" font-weight="700">×1</text>
+
+    <g>
+      <rect x="852" y="700" width="300" height="207" rx="13" fill="#F8FAFC" stroke="#D8E0EA"/>
+      <rect x="852" y="700" width="300" height="38" rx="13" fill="#FFF7ED"/>
+      <rect x="852" y="725" width="300" height="13" fill="#FFF7ED"/>
+      <text x="872" y="725" fill="#B54708" font-size="15" font-weight="780">Filter</text>
+      <text x="872" y="761" fill="#475467" font-size="11">W = 1　avg = 1s　speed = 1/s</text>
+      <text x="872" y="785" fill="#475467" font-size="11">batch = 4　output = 2　扇出 = 0.5</text>
+      <text x="872" y="809" fill="#475467" font-size="11">k = 4 × Embedding扇出1 = 4</text>
+      <line x1="872" y1="826" x2="1132" y2="826" stroke="#FED7AA"/>
+      <text x="872" y="850" fill="#667085" font-size="11">1 × 1 × 4 ÷ 4</text>
+      <text x="872" y="881" fill="#B54708" font-size="24" font-weight="780">1.0 <tspan font-size="12">源头 Task/s</tspan></text>
+    </g>
+
+    <line x1="1163" y1="803" x2="1193" y2="803" stroke="#F59E0B" stroke-width="3" marker-end="url(#arrow-orange)"/>
+    <text x="1179" y="788" text-anchor="middle" fill="#B54708" font-size="9" font-weight="700">×0.5</text>
+
+    <g>
+      <rect x="1204" y="700" width="326" height="207" rx="13" fill="#F0FDF4" stroke="#ABEFC6"/>
+      <rect x="1204" y="700" width="326" height="38" rx="13" fill="#DCFCE7"/>
+      <rect x="1204" y="725" width="326" height="13" fill="#DCFCE7"/>
+      <text x="1224" y="725" fill="#067647" font-size="15" font-weight="780">Writer</text>
+      <text x="1508" y="724" text-anchor="end" fill="#067647" font-size="10" font-weight="750">MAX CAPACITY</text>
+      <text x="1224" y="761" fill="#475467" font-size="11">W = 1　avg = 0.25s　speed = 4/s</text>
+      <text x="1224" y="785" fill="#475467" font-size="11">batch = 2　input = 过滤后 Task</text>
+      <text x="1224" y="809" fill="#475467" font-size="11">k = 4 × Filter扇出0.5 = 2</text>
+      <line x1="1224" y1="826" x2="1510" y2="826" stroke="#BBF7D0"/>
+      <text x="1224" y="850" fill="#667085" font-size="11">1 × 4 × 2 ÷ 2</text>
+      <text x="1224" y="881" fill="#067647" font-size="24" font-weight="780">4.0 <tspan font-size="12">源头 Task/s</tspan></text>
+    </g>
+
+    <rect x="68" y="923" width="1462" height="23" rx="7" fill="#F2F4F7"/>
+    <rect x="68" y="923" width="183" height="23" rx="7" fill="#F04438"/>
+    <text x="799" y="939" text-anchor="middle" fill="#344054" font-size="11" font-weight="700">Pipeline 实际吞吐 = min(0.5, 2.0, 1.0, 4.0) = 0.5 源头 Task/s</text>
+
+    <!-- Decision -->
+    <rect x="40" y="986" width="1520" height="154" rx="18" fill="#F0FDF7" stroke="#D1FADF" filter="url(#shadow)"/>
+    <text x="64" y="1020" fill="#067647" font-size="10" font-weight="800" letter-spacing="1.7">04 · AUTOSCALER DECISION · 比较的是能力，不是当前实际流量</text>
+
+    <rect x="68" y="1042" width="390" height="73" rx="11" fill="#FFFFFF" stroke="#FDA29B"/>
+    <circle cx="93" cy="1068" r="7" fill="#F04438"/>
+    <text x="112" y="1067" fill="#B42318" font-size="14" font-weight="760">Reader = 0.5：当前瓶颈</text>
+    <text x="112" y="1092" fill="#667085" font-size="11">优先增加 Worker，抬高 Pipeline 的最小值</text>
+
+    <line x1="475" y1="1078" x2="550" y2="1078" stroke="#F59E0B" stroke-width="3" marker-end="url(#arrow-orange)"/>
+    <text x="512" y="1061" text-anchor="middle" fill="#B54708" font-size="10" font-weight="750">资源重分配</text>
+
+    <rect x="565" y="1042" width="430" height="73" rx="11" fill="#FFFFFF" stroke="#ABEFC6"/>
+    <circle cx="590" cy="1068" r="7" fill="#12B76A"/>
+    <text x="609" y="1067" fill="#067647" font-size="14" font-weight="760">Writer = 4.0：能力最富余</text>
+    <text x="609" y="1092" fill="#667085" font-size="11">实际流量仍只有 0.5；若删 1 Worker 后仍够快，可作为 donor</text>
+
+    <rect x="1012" y="1042" width="518" height="73" rx="11" fill="#101828"/>
+    <text x="1034" y="1068" fill="#84ADFF" font-size="11" font-weight="750">算法目标</text>
+    <text x="1117" y="1068" fill="#FFFFFF" font-size="14" font-weight="760">max-min：持续提高最慢 Stage 的 throughput</text>
+    <text x="1034" y="1093" fill="#C9D7EB" font-size="11">Phase 1 固定配置 → Phase 2 保底 → Phase 3 均衡 → Phase 4 留余量</text>
+  </g>
+</svg>

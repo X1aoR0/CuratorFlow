@@ -1,4 +1,4 @@
-Host curator-flow-* ecs1 ecs2 ecs3
+Host curator-flow-* ecs1 ecs2 ecs3 gpu1
     User root
     Port 22
     BatchMode yes
@@ -15,3 +15,8 @@ Host curator-flow-ecs2 ecs2
 
 Host curator-flow-ecs3 ecs3
     HostName 8.130.191.173
+
+Host curator-flow-gpu1 gpu1
+    HostName 192.168.0.211
+    ProxyJump ecs1
+    UserKnownHostsFile deploy/known_hosts
