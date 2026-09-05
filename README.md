@@ -2,7 +2,7 @@
 
 CuratorFlow 是一个 NeMo Curator 实验与观测项目。媒体处理直接使用 Curator 原生 Stage；本项目只负责 Pipeline 组装、实验配置、运行指标、产物校验和分布式验证。
 
-当前 Pipeline、数据准备与执行约束见 [docs/pipeline_plan.md](docs/pipeline_plan.md)。
+当前 Pipeline 与执行约束见 [docs/pipeline_plan.md](docs/pipeline_plan.md)，单 Video shard 的完整实验步骤见 [docs/video_shard_experiment.md](docs/video_shard_experiment.md)。
 
 ## 资源目标
 

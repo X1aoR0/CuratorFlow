@@ -2,6 +2,8 @@
 
 CuratorFlow 不重新实现 NeMo Curator 的媒体处理算子。项目只负责 Pipeline 组装、实验配置、运行指标、产物校验和分布式验证。
 
+单个物理 Video shard 的递进实验、指标与验收标准见 [video_shard_experiment.md](video_shard_experiment.md)。
+
 ## Video Pipeline
 
 第一条主链路直接使用 Curator Stage：
@@ -62,7 +64,7 @@ python scripts/data/prepare_llava_video_shard.py \
 单机 CPU 运行：
 
 ```bash
-python -m curator_flow.experiments.video \
+python -m curator_flow.run_video_pipelines \
   --input-path /data/videos \
   --output-path /data/experiments/video-cpu/output \
   --report-path /data/experiments/video-cpu/report.json \

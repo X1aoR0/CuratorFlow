@@ -13,7 +13,7 @@ lint:
 check: test lint
 
 video:
-	PYTHONPYCACHEPREFIX=$(PYTHONPYCACHEPREFIX) $(PYTHON) -m curator_flow.experiments.video $(ARGS)
+	PYTHONPYCACHEPREFIX=$(PYTHONPYCACHEPREFIX) $(PYTHON) -m curator_flow.run_video_pipelines $(ARGS)
 
 prepare-llava:
 	PYTHONPYCACHEPREFIX=$(PYTHONPYCACHEPREFIX) $(PYTHON) scripts/data/prepare_llava_video_shard.py $(ARGS)

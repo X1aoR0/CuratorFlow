@@ -13,7 +13,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from curator_flow.pipelines.video import VideoPipelineConfig, build_video_pipeline
+from curator_flow.build_video_pipelines import VideoPipelineConfig, build_video_pipeline
 
 
 def preflight(config: VideoPipelineConfig) -> dict[str, Any]:
@@ -152,9 +152,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--verbose", action="store_true")
     return parser.parse_args()
 
-
+# pipeline启动
 def main() -> int:
+    # 把命令行参数解析出来
     args = parse_args()
+    # Pipeline的启动参数
     config = VideoPipelineConfig(
         input_path=args.input_path.resolve(),
         output_path=args.output_path.resolve(),

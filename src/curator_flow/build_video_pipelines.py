@@ -39,7 +39,9 @@ class VideoPipelineConfig:
     upload_clips: bool = True
     dry_run: bool = False
     verbose: bool = False
-
+    # 简单的校验，输入目录得有
+    # clip_len得是正的
+    # 编码器得是支持的
     def validate(self) -> None:
         if not self.input_path.exists():
             raise FileNotFoundError(f"Video input does not exist: {self.input_path}")
@@ -56,12 +58,13 @@ class VideoPipelineConfig:
             values[key] = str(values[key])
         return values
 
-
+# 惰性导入nemo_curator
 def _load_curator_components() -> dict[str, Any]:
     """Import Curator lazily so config/report tests run without Curator installed."""
 
     from nemo_curator.pipeline import Pipeline
     from nemo_curator.stages.file_partitioning import FilePartitioningStage
+    from nemo_curator.stages.resources import Resources
     from nemo_curator.stages.video.caption.caption_generation import CaptionGenerationStage
     from nemo_curator.stages.video.caption.caption_preparation import CaptionPreparationStage
     from nemo_curator.stages.video.clipping.clip_extraction_stages import (
@@ -73,6 +76,7 @@ def _load_curator_components() -> dict[str, Any]:
 
     return {
         "Pipeline": Pipeline,
+        "Resources": Resources,
         "FilePartitioningStage": FilePartitioningStage,
         "VideoReaderStage": VideoReaderStage,
         "FixedStrideExtractorStage": FixedStrideExtractorStage,
@@ -125,27 +129,52 @@ def build_video_pipeline(config: VideoPipelineConfig) -> Any:
     )
 
     if config.generate_captions:
-        pipeline.add_stage(
-            c["CaptionPreparationStage"](
-                model_variant=config.caption_model,
-                prompt_variant=config.caption_prompt_variant,
-                sampling_fps=config.caption_sampling_fps,
-                window_size=config.caption_window_size,
-                remainder_threshold=config.caption_remainder_threshold,
-                generate_previews=False,
-                verbose=config.verbose,
-            )
+        # PromptFormatter loads the model's Hugging Face AutoProcessor during
+        # setup_on_node(). Give preparation a tiny fractional GPU reservation so
+        # Xenna places it only on the GPU node, while leaving virtually the whole
+        # device available to vLLM in CaptionGenerationStage. The preparation
+        # work itself (window extraction and prompt formatting) remains CPU work.
+        caption_preparation = c["CaptionPreparationStage"](
+            model_variant=config.caption_model,
+            prompt_variant=config.caption_prompt_variant,
+            sampling_fps=config.caption_sampling_fps,
+            window_size=config.caption_window_size,
+            remainder_threshold=config.caption_remainder_threshold,
+            generate_previews=False,
+            verbose=config.verbose,
+        ).with_(
+            resources=c["Resources"](cpus=1.0, gpus=0.01),
+            runtime_env={
+                "env_vars": {
+                    "HF_HOME": "/mnt/curator-flow/hf-cache",
+                    "HF_HUB_OFFLINE": "1",
+                    "TRANSFORMERS_OFFLINE": "1",
+                }
+            },
+            num_workers=1,
         )
-        pipeline.add_stage(
-            c["CaptionGenerationStage"](
-                model_dir=str(config.model_dir),
-                model_variant=config.caption_model,
-                caption_batch_size=config.caption_batch_size,
-                max_output_tokens=config.caption_max_output_tokens,
-                disable_mmcache=True,
-                verbose=config.verbose,
-            )
+        pipeline.add_stage(caption_preparation)
+
+        caption_generation = c["CaptionGenerationStage"](
+            model_dir=str(config.model_dir),
+            model_variant=config.caption_model,
+            caption_batch_size=config.caption_batch_size,
+            max_output_tokens=config.caption_max_output_tokens,
+            disable_mmcache=True,
+            verbose=config.verbose,
+        ).with_(
+            resources=c["Resources"](cpus=1.0, gpus=0.99),
+            runtime_env={
+                "env_vars": {
+                    "HF_HOME": "/mnt/curator-flow/hf-cache",
+                    "HF_HUB_OFFLINE": "1",
+                    "TRANSFORMERS_OFFLINE": "1",
+                    "VLLM_USE_FLASHINFER_SAMPLER": "0",
+                }
+            },
+            num_workers=1,
         )
+        pipeline.add_stage(caption_generation)
 
     pipeline.add_stage(
         c["ClipWriterStage"](

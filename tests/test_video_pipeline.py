@@ -4,14 +4,19 @@ from unittest.mock import patch
 
 import pytest
 
-from curator_flow.experiments.video import _artifact_metrics, preflight
-from curator_flow.pipelines.video import VideoPipelineConfig, build_video_pipeline
+from curator_flow.build_video_pipelines import VideoPipelineConfig, build_video_pipeline
+from curator_flow.run_video_pipelines import _artifact_metrics, preflight
 
 
 class _FakeStage:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self.name = self.__class__.__name__
+        self.overrides = {}
+
+    def with_(self, **kwargs):
+        self.overrides.update(kwargs)
+        return self
 
 
 class _FakePipeline:
@@ -37,6 +42,7 @@ def _components():
     )
     components = {name: type(name, (_FakeStage,), {}) for name in names}
     components["Pipeline"] = _FakePipeline
+    components["Resources"] = lambda **kwargs: kwargs
     return components
 
 
@@ -53,7 +59,7 @@ def _config(tmp_path: Path, *, captions: bool = False) -> VideoPipelineConfig:
 
 
 def test_cpu_pipeline_uses_only_curator_stages(tmp_path: Path) -> None:
-    with patch("curator_flow.pipelines.video._load_curator_components", return_value=_components()):
+    with patch("curator_flow.build_video_pipelines._load_curator_components", return_value=_components()):
         pipeline = build_video_pipeline(_config(tmp_path))
 
     assert [stage.__class__.__name__ for stage in pipeline.stages] == [
@@ -69,7 +75,7 @@ def test_cpu_pipeline_uses_only_curator_stages(tmp_path: Path) -> None:
 
 
 def test_caption_pipeline_inserts_curator_caption_stages(tmp_path: Path) -> None:
-    with patch("curator_flow.pipelines.video._load_curator_components", return_value=_components()):
+    with patch("curator_flow.build_video_pipelines._load_curator_components", return_value=_components()):
         pipeline = build_video_pipeline(_config(tmp_path, captions=True))
 
     assert [stage.__class__.__name__ for stage in pipeline.stages] == [
@@ -87,7 +93,7 @@ def test_caption_pipeline_inserts_curator_caption_stages(tmp_path: Path) -> None
 def test_preflight_rejects_captioning_without_cuda(tmp_path: Path) -> None:
     fake_torch = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
     with (
-        patch("curator_flow.experiments.video.shutil.which", return_value="/usr/bin/tool"),
+        patch("curator_flow.run_video_pipelines.shutil.which", return_value="/usr/bin/tool"),
         patch.dict("sys.modules", {"torch": fake_torch}),
         pytest.raises(RuntimeError, match="requires a CUDA GPU"),
     ):
