@@ -24,16 +24,32 @@ def preflight(config: VideoPipelineConfig) -> dict[str, Any]:
         raise RuntimeError("ffmpeg and ffprobe are required by Curator video stages.")
     if config.generate_captions:
         try:
-            import torch
+            import ray
         except ImportError as exc:
-            raise RuntimeError("CaptionGenerationStage requires PyTorch and one GPU.") from exc
-        if not torch.cuda.is_available():
-            raise RuntimeError("CaptionGenerationStage requires a CUDA GPU; none is visible on this host.")
+            raise RuntimeError("CaptionGenerationStage requires Ray cluster access.") from exc
+        initialized_here = not ray.is_initialized()
+        if initialized_here:
+            ray.init(address=os.environ.get("RAY_ADDRESS", "auto"))
+        try:
+            available_gpus = int(ray.cluster_resources().get("GPU", 0))
+        finally:
+            if initialized_here:
+                ray.shutdown()
+        required_gpus = config.caption_num_workers or 1
+        if available_gpus < required_gpus:
+            raise RuntimeError(
+                f"CaptionGenerationStage requires {required_gpus} Ray GPUs; cluster has {available_gpus}."
+            )
 
-    input_files = sorted(
-        path
-        for path in config.input_path.rglob("*")
-        if path.is_file() and path.suffix.lower() in {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+    selected_paths = config.file_paths()
+    input_files = (
+        [Path(path) for path in selected_paths]
+        if isinstance(selected_paths, list)
+        else sorted(
+            path
+            for path in config.input_path.rglob("*")
+            if path.is_file() and path.suffix.lower() in {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+        )
     )
     if not input_files:
         raise RuntimeError(f"No supported videos found under {config.input_path}.")
@@ -46,14 +62,28 @@ def preflight(config: VideoPipelineConfig) -> dict[str, Any]:
         "input_bytes": sum(path.stat().st_size for path in input_files),
         "ffmpeg": shutil.which("ffmpeg"),
         "ffprobe": shutil.which("ffprobe"),
+        "ray_cluster_gpus": available_gpus if config.generate_captions else 0,
     }
 
 
-def _build_executor(name: str, execution_mode: str) -> Any:
+def _build_executor(
+    name: str,
+    execution_mode: str,
+    *,
+    logging_interval: float,
+    autoscale_interval_s: float,
+) -> Any:
     if name == "xenna":
         from nemo_curator.backends.xenna import XennaExecutor
 
-        return XennaExecutor(config={"execution_mode": execution_mode, "cpu_allocation_percentage": 0.75})
+        return XennaExecutor(
+            config={
+                "execution_mode": execution_mode,
+                "cpu_allocation_percentage": 0.75,
+                "logging_interval": logging_interval,
+                "autoscale_interval_s": autoscale_interval_s,
+            }
+        )
     if name == "ray_data":
         from nemo_curator.backends.ray_data import RayDataExecutor
 
@@ -93,6 +123,8 @@ def run_video_experiment(
     executor_name: str,
     execution_mode: str,
     report_path: Path,
+    xenna_logging_interval: float = 60,
+    xenna_autoscale_interval: float = 180,
 ) -> dict[str, Any]:
     started_at = time.time()
     report: dict[str, Any] = {
@@ -105,7 +137,17 @@ def run_video_experiment(
         environment = preflight(config)
         pipeline = build_video_pipeline(config)
         report.update({"environment": environment, "stages": [stage.name for stage in pipeline.stages]})
-        tasks = pipeline.run(_build_executor(executor_name, execution_mode)) or []
+        tasks = (
+            pipeline.run(
+                _build_executor(
+                    executor_name,
+                    execution_mode,
+                    logging_interval=xenna_logging_interval,
+                    autoscale_interval_s=xenna_autoscale_interval,
+                )
+            )
+            or []
+        )
         elapsed = time.time() - started_at
         artifacts = _artifact_metrics(config.output_path)
         report.update(
@@ -131,6 +173,7 @@ def run_video_experiment(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a Curator-native video curation experiment.")
     parser.add_argument("--input-path", type=Path, required=True)
+    parser.add_argument("--input-file-list", type=Path)
     parser.add_argument("--output-path", type=Path, required=True)
     parser.add_argument("--report-path", type=Path, required=True)
     parser.add_argument("--model-dir", type=Path, default=Path("models"))
@@ -148,6 +191,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--caption-model", choices=("qwen2.5", "qwen3"), default="qwen2.5")
     parser.add_argument("--caption-batch-size", type=int, default=1)
     parser.add_argument("--caption-max-output-tokens", type=int, default=256)
+    parser.add_argument("--caption-num-workers", type=int, default=1)
+    parser.add_argument("--xenna-logging-interval", type=float, default=60)
+    parser.add_argument("--xenna-autoscale-interval", type=float, default=180)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     return parser.parse_args()
@@ -159,6 +205,7 @@ def main() -> int:
     # Pipeline的启动参数
     config = VideoPipelineConfig(
         input_path=args.input_path.resolve(),
+        input_file_list=args.input_file_list.resolve() if args.input_file_list else None,
         output_path=args.output_path.resolve(),
         model_dir=args.model_dir.resolve(),
         video_limit=args.video_limit,
@@ -173,6 +220,7 @@ def main() -> int:
         caption_model=args.caption_model,
         caption_batch_size=args.caption_batch_size,
         caption_max_output_tokens=args.caption_max_output_tokens,
+        caption_num_workers=args.caption_num_workers,
         dry_run=args.dry_run,
         verbose=args.verbose,
     )
@@ -181,6 +229,8 @@ def main() -> int:
         executor_name=args.executor,
         execution_mode=args.execution_mode,
         report_path=args.report_path.resolve(),
+        xenna_logging_interval=args.xenna_logging_interval,
+        xenna_autoscale_interval=args.xenna_autoscale_interval,
     )
     return 0
 

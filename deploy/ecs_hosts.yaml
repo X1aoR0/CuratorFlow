@@ -24,4 +24,16 @@ nodes:
     role: gpu_worker
     private_ip: 192.168.0.211
     proxy_jump: ecs1
+  - name: gpu2
+    role: gpu_worker
+    private_ip: 192.168.0.212
+    proxy_jump: ecs1
+  - name: gpu3
+    role: gpu_worker
+    private_ip: 192.168.0.213
+    proxy_jump: ecs1
+  - name: gpu4
+    role: gpu_worker
+    private_ip: 192.168.0.214
+    proxy_jump: ecs1
 

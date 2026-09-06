@@ -1,5 +1,45 @@
 # 4. Caption Scale-out：四 GPU 环境快速迁移准备
 
+## 实际部署结果
+
+四个 GPU 节点已经完成运行环境迁移并加入 Ray：
+
+| 节点 | 内网 IP | CPU | GPU | 环境状态 |
+| --- | --- | ---: | --- | --- |
+| GPU1 | `192.168.0.211` | 8 | 1×NVIDIA L20 46GB | 黄金源 |
+| GPU2 | `192.168.0.212` | 8 | 1×NVIDIA L20 46GB | 已从 GPU1 内网迁移并验收 |
+| GPU3 | `192.168.0.213` | 8 | 1×NVIDIA L20 46GB | 已从 GPU1 内网迁移并验收 |
+| GPU4 | `192.168.0.214` | 8 | 1×NVIDIA L20 46GB | 已从 GPU1 内网迁移并验收 |
+
+三台新节点均已具备：
+
+```text
+Ubuntu 22.04.5
+NVIDIA driver 580.126.09
+CUDA /usr/local/cuda-12.8
+Python 3.12.14
+torch 2.11.0+cu129
+Ray 2.57.0
+vLLM 0.22.0
+NeMo Curator 1.3.0
+ffmpeg / ffprobe
+Qwen2_5_VLProcessor 离线加载
+NFS /mnt/curator-flow 持久挂载
+```
+
+Ray 集群实测：
+
+```text
+ALIVE nodes: 7
+CPU: 44
+GPU: 4
+object store: 82.31 GiB
+```
+
+4 个 Ray `num_gpus=1` 探针任务分别调度到 `.211`、`.212`、`.213`、`.214`，每台均确认 `torch.cuda.is_available() == True` 且设备为 NVIDIA L20。
+
+正式运行前仍需修改 Pipeline：当前 CaptionGeneration 配置固定 `num_workers=1`、`gpus=0.99`，不会自动使用四张卡。
+
 ## 目标
 
 在 GPU ECS 开始按小时计费后，用尽可能短且可预测的时间完成下面几件事：

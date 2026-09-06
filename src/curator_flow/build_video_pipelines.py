@@ -18,6 +18,7 @@ class VideoPipelineConfig:
     input_path: Path
     output_path: Path
     model_dir: Path
+    input_file_list: Path | None = None
     video_limit: int | None = None
     clip_len_s: float = 10.0
     clip_stride_s: float = 10.0
@@ -36,6 +37,7 @@ class VideoPipelineConfig:
     caption_remainder_threshold: int = 128
     caption_batch_size: int = 1
     caption_max_output_tokens: int = 256
+    caption_num_workers: int | None = 1
     upload_clips: bool = True
     dry_run: bool = False
     verbose: bool = False
@@ -45,18 +47,28 @@ class VideoPipelineConfig:
     def validate(self) -> None:
         if not self.input_path.exists():
             raise FileNotFoundError(f"Video input does not exist: {self.input_path}")
+        if self.input_file_list is not None and not self.input_file_list.is_file():
+            raise FileNotFoundError(f"Video input file list does not exist: {self.input_file_list}")
         if self.clip_len_s <= 0 or self.clip_stride_s <= 0:
             raise ValueError("clip_len_s and clip_stride_s must be positive.")
         if self.min_clip_length_s <= 0:
             raise ValueError("min_clip_length_s must be positive.")
         if self.transcode_encoder not in {"libvpx-vp9", "libopenh264", "h264_nvenc"}:
             raise ValueError(f"Unsupported transcode encoder: {self.transcode_encoder}")
+        if self.caption_num_workers is not None and self.caption_num_workers <= 0:
+            raise ValueError("caption_num_workers must be positive or None.")
 
     def to_dict(self) -> dict[str, Any]:
         values = asdict(self)
-        for key in ("input_path", "output_path", "model_dir"):
-            values[key] = str(values[key])
+        for key in ("input_path", "output_path", "model_dir", "input_file_list"):
+            if values[key] is not None:
+                values[key] = str(values[key])
         return values
+
+    def file_paths(self) -> str | list[str]:
+        if self.input_file_list is None:
+            return str(self.input_path)
+        return [line.strip() for line in self.input_file_list.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 # 惰性导入nemo_curator
 def _load_curator_components() -> dict[str, Any]:
@@ -71,8 +83,9 @@ def _load_curator_components() -> dict[str, Any]:
         ClipTranscodingStage,
         FixedStrideExtractorStage,
     )
-    from nemo_curator.stages.video.io.clip_writer import ClipWriterStage
     from nemo_curator.stages.video.io.video_reader import VideoReaderStage
+
+    from curator_flow.clip_writer import FullErrorClipWriterStage
 
     return {
         "Pipeline": Pipeline,
@@ -83,7 +96,7 @@ def _load_curator_components() -> dict[str, Any]:
         "ClipTranscodingStage": ClipTranscodingStage,
         "CaptionPreparationStage": CaptionPreparationStage,
         "CaptionGenerationStage": CaptionGenerationStage,
-        "ClipWriterStage": ClipWriterStage,
+        "ClipWriterStage": FullErrorClipWriterStage,
     }
 
 
@@ -99,7 +112,7 @@ def build_video_pipeline(config: VideoPipelineConfig) -> Any:
 
     pipeline.add_stage(
         c["FilePartitioningStage"](
-            file_paths=str(config.input_path),
+            file_paths=config.file_paths(),
             files_per_partition=1,
             file_extensions=[".mp4", ".mov", ".avi", ".mkv", ".webm"],
             limit=config.video_limit,
@@ -129,11 +142,8 @@ def build_video_pipeline(config: VideoPipelineConfig) -> Any:
     )
 
     if config.generate_captions:
-        # PromptFormatter loads the model's Hugging Face AutoProcessor during
-        # setup_on_node(). Give preparation a tiny fractional GPU reservation so
-        # Xenna places it only on the GPU node, while leaving virtually the whole
-        # device available to vLLM in CaptionGenerationStage. The preparation
-        # work itself (window extraction and prompt formatting) remains CPU work.
+        # Processor files live in the shared offline HF cache, so preparation can
+        # scale across CPU nodes and leave all GPUs to caption generation.
         caption_preparation = c["CaptionPreparationStage"](
             model_variant=config.caption_model,
             prompt_variant=config.caption_prompt_variant,
@@ -143,7 +153,7 @@ def build_video_pipeline(config: VideoPipelineConfig) -> Any:
             generate_previews=False,
             verbose=config.verbose,
         ).with_(
-            resources=c["Resources"](cpus=1.0, gpus=0.01),
+            resources=c["Resources"](cpus=1.0),
             runtime_env={
                 "env_vars": {
                     "HF_HOME": "/mnt/curator-flow/hf-cache",
@@ -151,7 +161,7 @@ def build_video_pipeline(config: VideoPipelineConfig) -> Any:
                     "TRANSFORMERS_OFFLINE": "1",
                 }
             },
-            num_workers=1,
+            num_workers=None,
         )
         pipeline.add_stage(caption_preparation)
 
@@ -163,7 +173,7 @@ def build_video_pipeline(config: VideoPipelineConfig) -> Any:
             disable_mmcache=True,
             verbose=config.verbose,
         ).with_(
-            resources=c["Resources"](cpus=1.0, gpus=0.99),
+            resources=c["Resources"](cpus=1.0, gpus=1.0),
             runtime_env={
                 "env_vars": {
                     "HF_HOME": "/mnt/curator-flow/hf-cache",
@@ -172,7 +182,7 @@ def build_video_pipeline(config: VideoPipelineConfig) -> Any:
                     "VLLM_USE_FLASHINFER_SAMPLER": "0",
                 }
             },
-            num_workers=1,
+            num_workers=config.caption_num_workers,
         )
         pipeline.add_stage(caption_generation)
 

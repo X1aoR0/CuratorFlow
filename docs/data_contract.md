@@ -27,6 +27,8 @@ output/
 - `clip_location`：输出 MP4 位置；
 - `windows`：caption window 的帧范围与模型 caption；
 - `valid`：clip 是否包含 buffer 和有效 window。
+- `errors`：Curator 各 Stage 写入 `clip.errors` 的完整键值字典，例如
+  `{"transcode": "ffmpeg exited with code 1"}`；没有错误时不写该字段。
 
 未启用 caption 时，`windows` 为空且 `valid=false`，但 clip MP4 仍可用于 CPU 转码链路验证。启用 caption 后，window 内字段按 Curator 规则命名，例如 `qwen2.5_caption`。
 

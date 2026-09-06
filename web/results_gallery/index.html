@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CuratorFlow Results Gallery</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:#101218; color:#e8edf6; }
+    header { position:sticky; top:0; z-index:5; background:#171a22f2; border-bottom:1px solid #303644; padding:16px 24px; backdrop-filter:blur(10px); }
+    .top { max-width:1500px; margin:auto; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    h1 { margin:0; font-size:21px; }
+    #summary { color:#9faabc; font-size:13px; margin-top:5px; }
+    .tools { display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
+    input,button { background:#242a35; color:#edf2fa; border:1px solid #3a4250; border-radius:8px; padding:8px 11px; }
+    input { width:310px; } button { cursor:pointer; } button:disabled { opacity:.4; cursor:default; }
+    main { max-width:1500px; margin:auto; padding:22px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+    article { border:1px solid #303744; border-radius:13px; overflow:hidden; background:#191d25; box-shadow:0 8px 24px #0005; }
+    .heading { padding:12px 15px; border-bottom:1px solid #303744; }
+    .heading h2 { margin:0 0 5px; font-size:15px; word-break:break-all; }
+    .source { color:#9faabc; font-size:12px; word-break:break-all; }
+    video { width:100%; max-height:430px; display:block; background:#060709; }
+    .body { padding:14px; }
+    .facts { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:11px; }
+    .fact { background:#29303c; color:#cdd6e5; border-radius:999px; padding:4px 8px; font-size:11px; }
+    .window { margin-top:10px; padding:12px; border-radius:8px; background:#222832; border-left:3px solid #7289da; }
+    .window h3 { margin:0 0 7px; font-size:12px; color:#aebdf5; }
+    .caption { margin:0; white-space:pre-wrap; line-height:1.55; font-size:13px; color:#dce3ee; }
+    .links { display:flex; gap:12px; margin-top:12px; font-size:12px; } a { color:#8bb8ff; }
+    footer { position:sticky; bottom:0; z-index:4; background:#171a22f2; border-top:1px solid #303644; padding:12px 24px; }
+    .pager { max-width:1500px; margin:auto; display:flex; justify-content:center; align-items:center; gap:10px; }
+    #pageInfo { min-width:180px; text-align:center; color:#b9c2d1; font-size:13px; }
+    .empty { grid-column:1/-1; padding:80px; text-align:center; color:#9faabc; }
+    @media(max-width:900px){ main{grid-template-columns:1fr;padding:12px} input{width:min(72vw,310px)} }
+  </style>
+</head>
+<body>
+  <header><div class="top"><div><h1>CuratorFlow Video Results</h1><div id="summary">加载索引中…</div></div><div class="tools"><input id="search" placeholder="搜索源视频路径或 Clip UUID"><button id="clear">清空</button></div></div></header>
+  <main id="grid"></main>
+  <footer><div class="pager"><button id="first">首页</button><button id="prev">上一页</button><span id="pageInfo"></span><button id="next">下一页</button><button id="last">末页</button><input id="jump" type="number" min="1" placeholder="页码" style="width:80px"><button id="go">跳转</button></div></footer>
+  <script>
+    const state={index:null,filtered:[],page:1,pageSize:10};
+    const $=id=>document.getElementById(id);
+    const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[c]);
+    const pages=()=>Math.max(1,Math.ceil(state.filtered.length/state.pageSize));
+    async function card(item){
+      const metadata=await fetch(item.metadata_url).then(r=>r.json());
+      const windows=(metadata.windows||[]).map((w,i)=>`<section class="window"><h3>Window ${i+1} · frames ${w.start_frame}–${w.end_frame}</h3><p class="caption">${esc(w["qwen2.5_caption"]||"（无 caption）")}</p></section>`).join("");
+      return `<article><div class="heading"><h2>${esc(item.id)}</h2><div class="source">${esc(item.source_video)}</div></div><video controls preload="metadata" src="${item.video_url}"></video><div class="body"><div class="facts"><span class="fact">${item.duration_span[0]}–${item.duration_span[1]}s</span><span class="fact">${item.width}×${item.height}</span><span class="fact">${Number(item.framerate).toFixed(2)} FPS</span><span class="fact">${item.window_count} window(s)</span><span class="fact">valid=${item.valid}</span></div>${windows}<div class="links"><a href="${item.video_url}" download>下载视频</a><a href="${item.metadata_url}" target="_blank">查看 metadata</a></div></div></article>`;
+    }
+    async function render(){
+      state.page=Math.min(Math.max(1,state.page),pages());
+      const start=(state.page-1)*state.pageSize, current=state.filtered.slice(start,start+state.pageSize);
+      $("grid").innerHTML=current.length?"<div class='empty'>加载当前页…</div>":"<div class='empty'>没有匹配结果</div>";
+      if(current.length) $("grid").innerHTML=(await Promise.all(current.map(card))).join("");
+      $("summary").textContent=`${state.index.run_id} · 共 ${state.index.item_count} clips · 当前筛选 ${state.filtered.length} · 每页 10 个`;
+      $("pageInfo").textContent=`第 ${state.page} / ${pages()} 页`;
+      $("first").disabled=$("prev").disabled=state.page===1; $("next").disabled=$("last").disabled=state.page===pages();
+      window.scrollTo({top:0,behavior:"smooth"});
+    }
+    function search(){ const q=$("search").value.trim().toLowerCase(); state.filtered=state.index.items.filter(x=>!q||x.id.toLowerCase().includes(q)||x.source_video.toLowerCase().includes(q)); state.page=1; render(); }
+    fetch("results.json").then(r=>r.json()).then(data=>{state.index=data;state.filtered=data.items;state.pageSize=data.page_size||10;render()}).catch(e=>$("grid").innerHTML=`<div class='empty'>加载失败：${esc(e)}</div>`);
+    $("search").addEventListener("input",search); $("clear").onclick=()=>{$("search").value="";search()};
+    $("first").onclick=()=>{state.page=1;render()}; $("prev").onclick=()=>{state.page--;render()}; $("next").onclick=()=>{state.page++;render()}; $("last").onclick=()=>{state.page=pages();render()};
+    $("go").onclick=()=>{state.page=Number($("jump").value)||1;render()}; $("jump").addEventListener("keydown",e=>{if(e.key==="Enter")$("go").click()});
+  </script>
+</body>
+</html>

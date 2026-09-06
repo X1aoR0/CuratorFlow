@@ -90,14 +90,33 @@ def test_caption_pipeline_inserts_curator_caption_stages(tmp_path: Path) -> None
     assert pipeline.stages[-1].kwargs["caption_models"] == ["qwen2.5"]
 
 
-def test_preflight_rejects_captioning_without_cuda(tmp_path: Path) -> None:
-    fake_torch = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
+def test_preflight_rejects_captioning_without_enough_cluster_gpus(tmp_path: Path) -> None:
+    fake_ray = SimpleNamespace(
+        is_initialized=lambda: False,
+        init=lambda **kwargs: None,
+        cluster_resources=lambda: {"GPU": 0},
+        shutdown=lambda: None,
+    )
     with (
         patch("curator_flow.run_video_pipelines.shutil.which", return_value="/usr/bin/tool"),
-        patch.dict("sys.modules", {"torch": fake_torch}),
-        pytest.raises(RuntimeError, match="requires a CUDA GPU"),
+        patch.dict("sys.modules", {"ray": fake_ray}),
+        pytest.raises(RuntimeError, match="requires 1 Ray GPUs"),
     ):
         preflight(_config(tmp_path, captions=True))
+
+
+def test_caption_pipeline_uses_configured_gpu_workers(tmp_path: Path) -> None:
+    config = _config(tmp_path, captions=True)
+    config = VideoPipelineConfig(**{**config.__dict__, "caption_num_workers": 4})
+    with patch("curator_flow.build_video_pipelines._load_curator_components", return_value=_components()):
+        pipeline = build_video_pipeline(config)
+
+    preparation = pipeline.stages[4]
+    generation = pipeline.stages[5]
+    assert preparation.overrides["resources"] == {"cpus": 1.0}
+    assert preparation.overrides["num_workers"] is None
+    assert generation.overrides["resources"] == {"cpus": 1.0, "gpus": 1.0}
+    assert generation.overrides["num_workers"] == 4
 
 
 def test_artifact_metrics_count_curator_outputs(tmp_path: Path) -> None:
@@ -115,4 +134,14 @@ def test_artifact_metrics_count_curator_outputs(tmp_path: Path) -> None:
     assert metrics["total_bytes"] == 6
     assert metrics["valid_clips"] == 0
     assert metrics["captioned_windows"] == 0
+
+
+def test_config_can_select_exact_input_files(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    selected = config.input_path / "sample.mp4"
+    file_list = tmp_path / "pending.txt"
+    file_list.write_text(f"{selected}\n", encoding="utf-8")
+    config = VideoPipelineConfig(**{**config.__dict__, "input_file_list": file_list})
+
+    assert config.file_paths() == [str(selected)]
 
